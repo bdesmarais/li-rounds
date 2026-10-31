@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>LinkedIn Round</title>
+<style>
+  :root{--bg:#f5f7fa;--card:#fff;--ink:#14213d;--muted:#5d6b82;--line:#dfe4ec;--accent:#2b8fa6;--ok:#2e7d4f}
+  @media (prefers-color-scheme: dark){:root{--bg:#11161d;--card:#1a212b;--ink:#e8edf4;--muted:#9aa7b8;--line:#2a3340;--accent:#5bbbd0;--ok:#6cc58f}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:900px;margin:0 auto;padding:16px}
+  h1{font-size:22px;margin:8px 0 4px} h2{font-size:18px;margin:26px 0 6px}
+  .sub,.note{color:var(--muted);font-size:14px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+  input[type=password]{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font-size:16px}
+  button,.btn{border:0;border-radius:8px;padding:7px 11px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;cursor:pointer;text-decoration:none;display:inline-block;white-space:nowrap}
+  .ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+  .row{display:flex;gap:10px;align-items:center}
+  .person{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
+  .person:first-child{border-top:0}
+  .person .who{flex:1;min-width:0}
+  .person .nm{font-weight:600}
+  .person .hl{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis}
+  .person.done{opacity:.45}
+  .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  label.chk{display:flex;gap:5px;align-items:center;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap}
+  .msg{white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px;font-size:14px}
+  .bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:6px}
+  .bar>div{height:100%;background:var(--ok);width:0}
+  .hidden{display:none}
+  ol{margin:6px 0 0 18px;padding:0} li{margin:3px 0}
+  @media (max-width:600px){.person{flex-direction:column}.acts{justify-content:flex-start}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section id="gate" class="panel" style="margin-top:16vh">
+    <h1>LinkedIn round</h1>
+    <p class="sub">Enter the password to open this week's list.</p>
+    <form id="gateForm" class="row"><input id="pass" type="password" placeholder="Password" autofocus><button type="submit">Open</button></form>
+    <p id="gateMsg" class="note"></p>
+  </section>
+
+  <section id="app" class="hidden">
+    <h1 id="title">LinkedIn round</h1>
+    <p class="sub" id="sub"></p>
+
+    <div class="panel">
+      <b>This week, about 2 hours:</b>
+      <ol>
+        <li><b>Connection requests.</b> For each person below, click <i>Open profile</i>, then <i>Connect</i> and <i>Send without a note</i>, and tick <i>Sent</i>. Spread them over the week, about 30-40 a day, so LinkedIn doesn't flag the account.</li>
+        <li><b>Messages.</b> For people who accepted last week's requests, click <i>Open profile</i>, then <i>Message</i>, paste the copied text, send, and tick <i>Sent</i>.</li>
+        <li><b>At the end of the week,</b> download your LinkedIn connections (Settings &gt; Data privacy &gt; Get a copy of your data &gt; <i>Connections</i>) and email the file to Bruce. That's how next week's list knows who accepted.</li>
+        <li>If anyone asks for a trial or has questions, set them up as usual and tell Bruce.</li>
+      </ol>
+      <p class="note">Your ticks are saved in this browser only, so use the same browser all week.</p>
+    </div>
+
+    <h2>1. Connection requests <span class="note" id="reqCount"></span></h2>
+    <div class="bar"><div id="reqBar"></div></div>
+    <div class="panel" id="reqs"></div>
+
+    <h2>2. Messages to send <span class="note" id="msgCount"></span></h2>
+    <div class="panel" id="msgs"></div>
+  </section>
+</div>
+
+<script>
+"use strict";
+let DATA = null;
+const $ = id => document.getElementById(id);
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const store = { get(k){ try { return JSON.parse(localStorage.getItem(k) || "{}"); } catch(e){ return {}; } },
+                set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} } };
+
+async function decrypt(pass){
+  const blob = await (await fetch("data.enc", {cache:"no-store"})).json();
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({name:"PBKDF2", salt:b64(blob.salt), iterations:blob.iter, hash:"SHA-256"},
+                                           base, {name:"AES-GCM", length:256}, false, ["decrypt"]);
+  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM", iv:b64(blob.iv)}, key, b64(blob.ct))));
+}
+async function unlock(pass, remember){
+  try { DATA = await decrypt(pass); } catch(e) { $("gateMsg").textContent = "That password didn't work."; return; }
+  if (remember) { try { sessionStorage.setItem("lr.pass", pass); } catch(e){} }
+  $("gate").classList.add("hidden"); $("app").classList.remove("hidden"); render();
+}
+$("gateForm").addEventListener("submit", e => { e.preventDefault(); unlock($("pass").value, true); });
+(() => { let p = null; try { p = sessionStorage.getItem("lr.pass"); } catch(e){} if (p) unlock(p, false); })();
+
+function prof(slug){ return "https://www.linkedin.com/in/" + encodeURIComponent(slug) + "/"; }
+function render(){
+  const key = "lr." + DATA.round, done = store.get(key);
+  $("title").textContent = "LinkedIn round: week of " + new Date(DATA.round + "T12:00:00").toLocaleDateString(undefined, {month:"long", day:"numeric", year:"numeric"});
+  $("sub").textContent = DATA.requests.length + " connection requests and " + DATA.messages.length + " messages this week.";
+
+  const reqs = $("reqs"); reqs.innerHTML = "";
+  DATA.requests.forEach(p => {
+    const id = "r:" + p.slug, el = document.createElement("div");
+    el.className = "person" + (done[id] ? " done" : "");
+    el.innerHTML = "<div class='who'><div class='nm'></div><div class='hl'></div></div><div class='acts'><a class='btn' target='_blank' rel='noopener'>Open profile</a><label class='chk'><input type='checkbox'> Sent</label></div>";
+    el.querySelector(".nm").textContent = p.name;
+    el.querySelector(".hl").textContent = p.headline;
+    el.querySelector("a").href = prof(p.slug);
+    const cb = el.querySelector("input"); cb.checked = !!done[id];
+    cb.onchange = () => { const d = store.get(key); if (cb.checked) d[id] = Date.now(); else delete d[id]; store.set(key, d); el.classList.toggle("done", cb.checked); counts(); };
+    reqs.append(el);
+  });
+
+  const msgs = $("msgs"); msgs.innerHTML = "";
+  if (!DATA.messages.length) {
+    msgs.innerHTML = "<p class='note'>None yet. Messages start next week, for the people who accept this week's requests.</p>";
+  }
+  DATA.messages.forEach(m => {
+    const id = "m:" + m.slug, el = document.createElement("div");
+    el.className = "person" + (done[id] ? " done" : "");
+    el.innerHTML = "<div class='who'><div class='nm'></div><div class='hl'></div><div class='msg'></div></div><div class='acts'><a class='btn' target='_blank' rel='noopener'>Open profile</a><button class='ghost' type='button'>Copy message</button><label class='chk'><input type='checkbox'> Sent</label></div>";
+    el.querySelector(".nm").textContent = m.name;
+    el.querySelector(".hl").textContent = [m.gov, (m.state || "").toUpperCase()].filter(Boolean).join(", ");
+    el.querySelector(".msg").textContent = m.text;
+    el.querySelector("a").href = prof(m.slug);
+    const btn = el.querySelector("button");
+    btn.onclick = async () => { try { await navigator.clipboard.writeText(m.text); btn.textContent = "Copied"; setTimeout(() => btn.textContent = "Copy message", 1500); } catch(e) { btn.textContent = "Select the text above"; } };
+    const cb = el.querySelector("input"); cb.checked = !!done[id];
+    cb.onchange = () => { const d = store.get(key); if (cb.checked) d[id] = Date.now(); else delete d[id]; store.set(key, d); el.classList.toggle("done", cb.checked); counts(); };
+    msgs.append(el);
+  });
+  counts();
+}
+function counts(){
+  const done = store.get("lr." + DATA.round);
+  const r = DATA.requests.filter(p => done["r:" + p.slug]).length, m = DATA.messages.filter(x => done["m:" + x.slug]).length;
+  $("reqCount").textContent = "(" + r + " of " + DATA.requests.length + " sent)";
+  $("msgCount").textContent = DATA.messages.length ? "(" + m + " of " + DATA.messages.length + " sent)" : "";
+  $("reqBar").style.width = (DATA.requests.length ? 100 * r / DATA.requests.length : 0) + "%";
+}
+</script>
+</body>
+</html>
