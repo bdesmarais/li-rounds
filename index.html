@@ -20,13 +20,14 @@
   .row{display:flex;gap:10px;align-items:center}
   .person{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
   .person:first-child{border-top:0}
-  .person .who{flex:1;min-width:0}
+  .person .who{flex:1;min-width:0;width:100%}
   .person .nm{font-weight:600}
   .person .hl{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis}
   .person.done{opacity:.45}
-  .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:flex-start}
+  .copies{display:flex;flex-direction:column;gap:6px}
   label.chk{display:flex;gap:5px;align-items:center;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap}
-  .msg{white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px;font-size:14px}
+  .msg{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px;font-size:14px}
   .bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:6px}
   .bar>div{height:100%;background:var(--ok);width:0}
   .hidden{display:none}
@@ -48,10 +49,10 @@
     <p class="sub" id="sub"></p>
 
     <div class="panel">
-      <b>This week, about 2 hours:</b>
+      <b>This week, about 3 hours, spread over the week:</b>
       <ol>
         <li><b>Connection requests.</b> For each person below, click <i>Open profile</i>, then <i>Connect</i> and <i>Send without a note</i>, and tick <i>Sent</i>. Spread them over the week, about 30-40 a day, so LinkedIn doesn't flag the account.</li>
-        <li><b>Messages.</b> For people who accepted last week's requests, click <i>Open profile</i>, then <i>Message</i>, paste the copied text, send, and tick <i>Sent</i>.</li>
+        <li><b>Messages.</b> These go to people you are already connected with. Click <i>Open profile</i>, then <i>Message</i>. If the conversation shows you have written to them before, copy the <i>follow-up</i> version; if it's empty, copy the <i>first message</i>. Paste, send, and tick <i>Sent</i>. About 20 a day is plenty.</li>
         <li><b>At the end of the week,</b> download your LinkedIn connections (Settings &gt; Data privacy &gt; Get a copy of your data &gt; <i>Connections</i>) and email the file to Bruce. That's how next week's list knows who accepted.</li>
         <li>If anyone asks for a trial or has questions, set them up as usual and tell Bruce.</li>
       </ol>
@@ -116,13 +117,19 @@ function render(){
   DATA.messages.forEach(m => {
     const id = "m:" + m.slug, el = document.createElement("div");
     el.className = "person" + (done[id] ? " done" : "");
-    el.innerHTML = "<div class='who'><div class='nm'></div><div class='hl'></div><div class='msg'></div></div><div class='acts'><a class='btn' target='_blank' rel='noopener'>Open profile</a><button class='ghost' type='button'>Copy message</button><label class='chk'><input type='checkbox'> Sent</label></div>";
+    const alts = m.text_new ? [["First message (never written to them)", m.text_new, "Copy first message"], ["Follow-up (you've written before)", m.text_prior, "Copy follow-up"]]
+                            : [["", m.text, "Copy message"]];
+    el.innerHTML = "<div class='who'><div class='nm'></div><div class='hl'></div><div class='alts'></div></div><div class='acts'><a class='btn' target='_blank' rel='noopener'>Open profile</a><span class='copies'></span><label class='chk'><input type='checkbox'> Sent</label></div>";
     el.querySelector(".nm").textContent = m.name;
-    el.querySelector(".hl").textContent = [m.gov, (m.state || "").toUpperCase()].filter(Boolean).join(", ");
-    el.querySelector(".msg").textContent = m.text;
+    el.querySelector(".hl").textContent = m.headline || [m.gov, (m.state || "").toUpperCase()].filter(Boolean).join(", ");
     el.querySelector("a").href = prof(m.slug);
-    const btn = el.querySelector("button");
-    btn.onclick = async () => { try { await navigator.clipboard.writeText(m.text); btn.textContent = "Copied"; setTimeout(() => btn.textContent = "Copy message", 1500); } catch(e) { btn.textContent = "Select the text above"; } };
+    alts.forEach(([label, text, cta]) => {
+      if (label) { const l = document.createElement("div"); l.className = "note"; l.style.marginTop = "8px"; l.textContent = label; el.querySelector(".alts").append(l); }
+      const box = document.createElement("div"); box.className = "msg"; box.textContent = text; el.querySelector(".alts").append(box);
+      const btn = document.createElement("button"); btn.className = "ghost"; btn.type = "button"; btn.textContent = cta;
+      btn.onclick = async () => { try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; setTimeout(() => btn.textContent = cta, 1500); } catch(e) { btn.textContent = "Select the text"; } };
+      el.querySelector(".copies").append(btn);
+    });
     const cb = el.querySelector("input"); cb.checked = !!done[id];
     cb.onchange = () => { const d = store.get(key); if (cb.checked) d[id] = Date.now(); else delete d[id]; store.set(key, d); el.classList.toggle("done", cb.checked); counts(); };
     msgs.append(el);
