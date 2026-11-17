@@ -52,8 +52,8 @@
       <b>This week, about 3 hours, spread over the week:</b>
       <ol>
         <li><b>Connection requests.</b> For each person below, click <i>Open profile</i>, then <i>Connect</i> and <i>Send without a note</i>, and tick <i>Sent</i>. You can send them all at once: LinkedIn does not limit connection requests by the day, only by the weekly maximum. Bruce sends his in one batch on Mondays.</li>
-        <li><b>Messages.</b> These go to people you are already connected with, including the people who accepted last week's requests. Click <i>Open profile</i>, then <i>Message</i>, copy the message shown, paste, send, and tick <i>Sent</i>. When a person has two versions, copy the <i>follow-up</i> if you have written to them before and the <i>first message</i> if the conversation is empty. LinkedIn limits messages to about 50 an hour, so keep each sitting under that.</li>
-        <li><b>At the end of the week,</b> download your LinkedIn connections (Settings &gt; Data privacy &gt; Get a copy of your data &gt; <i>Connections</i>) and email the file to Bruce. That's how next week's list knows who accepted.</li>
+        <li><b>Messages.</b> These go to people you are already connected with, including the people who accepted last week's requests. Click <i>Open profile</i>, then <i>Message</i>, copy the message shown, paste, send, and tick <i>Sent</i>. If they write back, tick <i>Replied</i>. When a person has two versions, copy the <i>follow-up</i> if you have written to them before and the <i>first message</i> if the conversation is empty. LinkedIn limits messages to about 50 an hour, so keep each sitting under that.</li>
+        <li><b>At the end of the week,</b> download your LinkedIn connections (Settings &gt; Data privacy &gt; Get a copy of your data &gt; <i>Connections</i>) and email the file to Bruce. That's how next week's list knows who accepted. In the same email, paste your log from section 3 below (one click), so we know which messages went out and who replied.</li>
         <li>If anyone asks for a trial or has questions, set them up as usual and tell Bruce.</li>
       </ol>
       <p class="note">Your ticks are saved in this browser only, so use the same browser all week.</p>
@@ -65,6 +65,12 @@
 
     <h2>2. Messages to send <span class="note" id="msgCount"></span></h2>
     <div class="panel" id="msgs"></div>
+
+    <h2>3. Your log for Bruce</h2>
+    <div class="panel">
+      <p>Click the button, then paste into your end-of-week email to Bruce along with the connections file. It lists who you sent to, which message you copied, and who replied. Nothing is sent from this page.</p>
+      <button type="button" id="copyLog">Copy my log</button> <span class="note" id="logNote"></span>
+    </div>
   </section>
 </div>
 
@@ -117,25 +123,42 @@ function render(){
   DATA.messages.forEach(m => {
     const id = "m:" + m.slug, el = document.createElement("div");
     el.className = "person" + (done[id] ? " done" : "");
-    const alts = m.text_new ? [["First message (never written to them)", m.text_new, "Copy first message"], ["Follow-up (you've written before)", m.text_prior, "Copy follow-up"]]
-                            : [["", m.text, "Copy message"]];
-    el.innerHTML = "<div class='who'><div class='nm'></div><div class='hl'></div><div class='alts'></div></div><div class='acts'><a class='btn' target='_blank' rel='noopener'>Open profile</a><span class='copies'></span><label class='chk'><input type='checkbox'> Sent</label></div>";
+    const alts = m.text_new ? [["First message (never written to them)", m.text_new, "Copy first message", "first"], ["Follow-up (you've written before)", m.text_prior, "Copy follow-up", "followup"]]
+                            : [["", m.text, "Copy message", m.version || "single"]];
+    el.innerHTML = "<div class='who'><div class='nm'></div><div class='hl'></div><div class='alts'></div></div><div class='acts'><a class='btn' target='_blank' rel='noopener'>Open profile</a><span class='copies'></span><label class='chk'><input type='checkbox' class='sent'> Sent</label><label class='chk'><input type='checkbox' class='rep'> Replied</label></div>";
     el.querySelector(".nm").textContent = m.name;
     el.querySelector(".hl").textContent = m.headline || [m.gov, (m.state || "").toUpperCase()].filter(Boolean).join(", ");
     el.querySelector("a").href = prof(m.slug);
-    alts.forEach(([label, text, cta]) => {
+    alts.forEach(([label, text, cta, variant]) => {
       if (label) { const l = document.createElement("div"); l.className = "note"; l.style.marginTop = "8px"; l.textContent = label; el.querySelector(".alts").append(l); }
       const box = document.createElement("div"); box.className = "msg"; box.textContent = text; el.querySelector(".alts").append(box);
       const btn = document.createElement("button"); btn.className = "ghost"; btn.type = "button"; btn.textContent = cta;
-      btn.onclick = async () => { try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; setTimeout(() => btn.textContent = cta, 1500); } catch(e) { btn.textContent = "Select the text"; } };
+      btn.onclick = async () => { const d = store.get(key); d["c:" + m.slug] = variant; store.set(key, d);
+        try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; setTimeout(() => btn.textContent = cta, 1500); } catch(e) { btn.textContent = "Select the text"; } };
       el.querySelector(".copies").append(btn);
     });
-    const cb = el.querySelector("input"); cb.checked = !!done[id];
+    const cb = el.querySelector("input.sent"); cb.checked = !!done[id];
     cb.onchange = () => { const d = store.get(key); if (cb.checked) d[id] = Date.now(); else delete d[id]; store.set(key, d); el.classList.toggle("done", cb.checked); counts(); };
+    const rb = el.querySelector("input.rep"), rid = "y:" + m.slug; rb.checked = !!done[rid];
+    rb.onchange = () => { const d = store.get(key); if (rb.checked) d[rid] = Date.now(); else delete d[rid]; store.set(key, d); };
     msgs.append(el);
   });
   counts();
 }
+function iso(t){ return t ? new Date(t).toISOString().slice(0, 16) + "Z" : ""; }
+function buildLog(){
+  const d = store.get("lr." + DATA.round), L = ["GOVFEEDS-ROUND-LOG " + DATA.round, "kind\tslug\tsent_at\tcopied\treplied_at"];
+  DATA.requests.forEach(p => { if (d["r:" + p.slug]) L.push(["r", p.slug, iso(d["r:" + p.slug]), "", ""].join("\t")); });
+  DATA.messages.forEach(m => { const s = d["m:" + m.slug], y = d["y:" + m.slug];
+    if (s || y) L.push(["m", m.slug, iso(s), d["c:" + m.slug] || "", iso(y)].join("\t")); });
+  L.push("END"); return L.join("\n");
+}
+document.addEventListener("click", async e => {
+  if (!e.target || e.target.id !== "copyLog" || !DATA) return;
+  const txt = buildLog(), n = txt.split("\n").length - 3;
+  try { await navigator.clipboard.writeText(txt); $("logNote").textContent = "Copied (" + n + " lines). Paste it into your email to Bruce."; }
+  catch(err) { $("logNote").textContent = "Copy didn't work in this browser; select and copy the text below."; const pre = document.createElement("pre"); pre.className = "msg"; pre.textContent = txt; $("logNote").after(pre); }
+});
 function counts(){
   const done = store.get("lr." + DATA.round);
   const r = DATA.requests.filter(p => done["r:" + p.slug]).length, m = DATA.messages.filter(x => done["m:" + x.slug]).length;
